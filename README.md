@@ -1,237 +1,172 @@
-# NOVA
+# NOVA Dashboard
 
-NOVA is Ahmed's personal AI operating assistant: a voice-first, tool-using
-desktop agent built on LiveKit Agents with Gemini Realtime audio. It can use
-local tools for desktop control, files, notes, media, search, weather, system
-info, screen capture, and specialist model routing.
+The real NOVA desktop shell, implemented from `DESIGN_HANDOFF.md`
+(design_handoff_nova_desktop). Five swipeable pages — widget dashboard,
+NOVA + Second Brain, Apps & Files, Calendar, Agent control center — plus
+top bar, dock, command palette (Ctrl+K), notifications, and lock screen.
 
-This repository is being prepared for OpenAI Build Week. Pre-existing work and
-new hackathon work are tracked in [HACKATHON_LOG.md](HACKATHON_LOG.md).
+NOVA ships as a **standalone Windows desktop app** (Tauri 2) — its own
+`NOVA.exe`, icon, taskbar identity, and installer. No browser is involved: the
+UI renders in a borderless native window via the system WebView2 runtime, and
+the Python data server is started silently as a child process. See
+`nova-app/README.md` for the app internals.
 
-## Build Week Status
-
-- Challenge: OpenAI Build Week
-- Working title: NOVA Companion
-- Suggested category: Apps for Your Life
-- Submission deadline: July 21, 2026 at 5:00 PM PT / 8:00 PM ET
-- Required evidence: a working project, repository URL, README setup
-  instructions, public YouTube demo under 3 minutes, and the `/feedback` Codex
-  session ID for the main build thread
-
-The Build Week feature adds explicit GPT-5.6 reasoning, screen-help tools,
-Obsidian memory reading and writing, sandboxed course-material PDF/text
-extraction, prompt-driven Study Mode / Quiz Mode, saved conversation logs, and
-expanded file/window control on top of the existing Gemini/LiveKit voice
-agent. It also includes a first Conversation Mode runtime pass for barge-in
-and queued-reply reliability. The desktop dashboard design is still being
-iterated locally and is not included in this GitHub snapshot. GPT-5.6 is
-opt-in: NOVA only calls it when Ahmed
-asks for GPT-5.6/OpenAI reasoning, confirms that a screenshot may be shared
-for screen analysis, or starts Quiz Mode over extracted course material.
-
-## Current Capabilities
-
-- LiveKit voice agent in [agent.py](agent.py)
-- NOVA system prompt in [prompts.py](prompts.py)
-- Desktop app controls with approved app names
-- Window controls: focus, minimize, maximize, restore, and snap left/right/up/down
-- Windows notifications, quick settings, and virtual desktop shortcuts
-- File and note tools with sandboxing and `.env*` protection
-- File finder/open workflow for approved folders
-- Desktop creation tools that create new files/folders on Ahmed's OneDrive
-  Desktop without overwriting
-- Course-material reader for PDFs, Markdown, and text files in
-  `course_materials/`
-- Study Mode and Quiz Mode prompt flow over course materials, with GPT-5.6
-  quiz generation when quota is available
-- Conversation Mode first pass: explicit Gemini realtime turn handling,
-  start-of-activity interruption, shorter AEC warmup, and local state logs
-- Obsidian memory write path: `save_memory_note` creates new Markdown notes
-  under the vault's `NOVA/` folder without overwriting and refuses obvious
-  secrets
-- Obsidian vault search/read covers existing Markdown notes across the vault,
-  including long ChatGPT/Claude exports; long reads return capped excerpts
-  when a query is provided
-- Session conversation memory: timestamped Markdown transcripts in
-  `conversation_logs/`, with search/read tools for later sessions; live voice
-  sessions are also mirrored to `NOVA/Conversations/` in the Obsidian vault
-  when `OBSIDIAN_VAULT_PATH` is configured
-- Weather, web search, system info, and time tools
-- YouTube, Spotify, media key, and volume tools
-- Groq and Ollama specialist model tools
-- GPT-5.6 specialist reasoning tool
-- Screen capture tool that saves screenshots locally
-- Confirmed screen analysis through GPT-5.6
-- Local test driver for tools, chat, console launch, and LiveKit dev launch
-
-## Repository Layout
-
-```text
-agent.py          LiveKit AgentServer wiring and realtime voice session
-prompts.py        NOVA persona and system behavior
-tools/            Function tools for desktop, files, information, media,
-                  models, Obsidian, memory/search, and vision
-core/             Task routing/orchestration work in progress
-offline_agent.py  Local Ollama-only text mode
-requirements.txt  Python dependencies
-ROADMAP.md        NOVA feature roadmap
-HACKATHON_LOG.md  Old-vs-new Build Week evidence log
-HACKATHON_SUBMISSION.md  Devpost submission and contribution cheat sheet
-```
-
-## Requirements
-
-- Windows desktop environment
-- Python environment in `venv\` or a compatible fresh virtual environment
-- LiveKit credentials for LiveKit dev mode
-- Google Gemini API key for the current realtime voice path
-- OpenAI API key for GPT-5.6 reasoning and confirmed screen analysis
-- Optional: Spotify API credentials for Spotify playback
-- Optional: Groq API key for `ask_groq`
-- Optional: Ollama running locally for `ask_ollama` and `offline_agent.py`
-
-Secrets must be stored in `.env` or `.env.local`. Do not commit either file.
-Use [.env.example](.env.example) as the non-secret template.
-
-## Setup
-
-From PowerShell in the project root:
+## Run it
 
 ```powershell
-Set-Location "C:\Users\ahmed\OneDrive\Desktop\AI Agent"
+# The standalone app (recommended). Starts the data server itself, silently.
+&"$env:LOCALAPPDATA\Programs\NOVA\NOVA.exe"
 
-# If the checked-in machine already has the provisioned venv, use it.
-$env:PYTHONIOENCODING = 'utf-8'
+# Dev loop for the app (hot-reloads Rust + serves web/):
+cd Dashboard\nova-app ; npx tauri dev
 
-# For a fresh environment, create a venv and install dependencies.
-py -m venv venv
-& ".\venv\Scripts\python.exe" -m pip install -r requirements.txt
+# Backend only, no UI (for debugging the feeds):
+venv\Scripts\python.exe Dashboard\server.py   # binds 127.0.0.1:8787
 ```
 
-Create `.env` from `.env.example`, then fill only the credentials needed for
-the mode you want to run.
+The server binds to 127.0.0.1 only. The Python side adds no new dependencies —
+it uses aiohttp/psutil/spotipy/python-dotenv already in the venv. The app shell
+adds a Rust/Tauri build toolchain (already installed on this machine).
 
-GPT-5.6 is configured with:
+## The app: window modes, tray, autostart
 
-```env
-OPENAI_API_KEY=replace_me
-OPENAI_MODEL=gpt-5.6
-OPENAI_MAX_OUTPUT_TOKENS=800
-OPENAI_TIMEOUT_SECONDS=60
+- **Dashboard mode** — a normal movable/resizable window with a custom NOVA
+  title bar (minimize / maximize / hide / close). Closing hides to the tray;
+  NOVA keeps running.
+- **Desktop mode** — borderless, pinned to the bottom of the z-order, no
+  taskbar button, sized to the work area (never covers the taskbar). A small
+  toolbar offers *Dashboard* (return) and *Click-through* (let clicks fall to
+  the desktop; use the tray to come back). Rainmeter-like.
+- **System tray menu** — Open / Hide / Toggle Desktop Widgets / Toggle Edit Mode / Toggle Click-through / Always on Top / Start
+  with Windows / Restart NOVA / Quit NOVA. Left-click the tray icon to show.
+- **Start with Windows** — toggled from the tray; uses the OS autostart
+  mechanism (registry Run key), no PowerShell/terminal/Edge window at login.
+- **Single instance** — launching NOVA again focuses the running window.
+- Window size/position persist (window-state plugin); selected page, widget
+  layout, and last mode persist in the WebView2 localStorage.
+
+## Architecture
+
+```
+web/index.html    the design shell (template + logic; pixel-per the handoff)
+web/support.js    prototype runtime that renders the template
+web/tauri-shell.js  title bar + tray/mode wiring; INERT in a plain browser
+server.py         aiohttp: static files + one WebSocket (/ws) + collectors
+feeds.py          real-data collectors (see table below)
+actions.py        handlers for clicks the shell sends back over the socket
+runtime/          gitignored private command envelopes and transient state
+nova-app/         the Tauri 2 desktop wrapper (Rust + tauri.conf.json)
 ```
 
-The key is only used when NOVA calls `ask_gpt56` or
-`analyze_screen_with_gpt56`.
+The shell connects to `ws://127.0.0.1:8787/ws` (the app sets `window.NOVA_BACKEND`;
+a plain browser derives it from the URL). A teal **LIVE** pill shows when
+connected; before the backend is up — or when `web/index.html` is opened from
+disk — a **Demo Data** pill clearly identifies the simulated fallback. The shell
+shows instantly and upgrades to live data with no blank wait.
 
-## Run
+The browser/backend boundary is versioned as contract `1.1.0`. The frontend
+exposes `window.NOVAIntegration` for future NOVA adapters, and the server exposes
+`GET /health` plus the WebSocket snapshot contract. WebSocket actions accept
+only the bundled local page and Tauri origins; arbitrary websites are rejected.
 
-Local tool smoke test:
+React 18.3.1, ReactDOM 18.3.1, Babel Standalone 7.29.0, Space Grotesk, and their
+licenses are bundled under `web/vendor/` and `web/fonts/`. The dashboard does
+not depend on a CDN to start.
 
-```powershell
-& ".\venv\Scripts\python.exe" ".agents\skills\run-ai-agent\driver.py" tools
-```
+## Edit layout
 
-One text chat turn through the NOVA assistant and tools:
+Select **Edit layout** near the upper-right corner. Every main card on all five
+pages can be moved and resized. Layouts save independently per page in local
+storage and scale between supported display sizes. Edit Mode also provides:
 
-```powershell
-& ".\venv\Scripts\python.exe" ".agents\skills\run-ai-agent\driver.py" chat "What time is it right now?"
-```
+- pin and hide/restore;
+- undo and `Ctrl+Z`;
+- Reset Current Page and Reset All Pages;
+- eight-direction resizing;
+- card-local scrolling for overflowing content.
 
-Study/quiz mode examples:
+Outside Edit Mode the cards are locked and edit controls are hidden. Each page
+has an isolated clipped canvas, preventing adjacent pages from painting into the
+current page.
 
-```powershell
-& ".\venv\Scripts\python.exe" ".agents\skills\run-ai-agent\driver.py" chat "Study mode: teach me course_materials/biology.pdf."
-& ".\venv\Scripts\python.exe" ".agents\skills\run-ai-agent\driver.py" chat "Quiz mode: quiz me on course_materials/biology.pdf."
-```
+## What is real
 
-Quiz Mode depends on Gemini chat plus GPT-5.6 quota. If either service is
-rate-limited, NOVA should say so and offer a simpler review from the extracted
-material.
+| Surface | Source |
+| --- | --- |
+| CPU / RAM rings + top-bar pill | psutil, every 2s |
+| Now playing + play/pause/next/prev | Spotify Web API (cached OAuth) with window-title fallback; controls send real media keys |
+| Weather widget + briefing chip | wttr.in (no key; `NOVA_CITY` env optional) |
+| Clock, greeting | local time |
+| Obsidian notes widget, Second Brain note count, memory browser | `OBSIDIAN_VAULT_PATH` scan; memories = `NOVA/*.md` |
+| Tasks widget | checkboxes in `<vault>/NOVA/Tasks.md` (toggles write back) |
+| Memory "forget" (✕) | moves the note to `<vault>/NOVA/.trash/` — never deletes |
+| Agent phase (orb speed, status widget) | `conversation agent_state` lines in nova_tools.log |
+| Activity feed + execution timeline | nova_tools.log tool calls, tagged Tool/Memory/Route/Vision |
+| Needs-approval queue | reconstructed from `audit_logs/nova_actions.jsonl` |
+| Approve/Deny buttons | private atomic command bridge into the active agent process and its in-memory permission engine |
+| Ctrl+K delegation | inserted as a real user text turn in the active LiveKit `AgentSession` |
+| Live conversation bubbles + transcript pill | newest file in `conversation_logs/` |
+| Model route chips usage | `cloud_usage.json` written by nova_core (request counts) |
+| App launcher, dock, quick folders, recent files | Trusted normalized Win32/shortcut/UWP registry, opaque application IDs, real Desktop folders, security-filtered Windows Recent items |
 
-Conversation history examples:
 
-```powershell
-& ".\venv\Scripts\python.exe" ".agents\skills\run-ai-agent\driver.py" chat "What did we talk about last session?"
-& ".\venv\Scripts\python.exe" ".agents\skills\run-ai-agent\driver.py" chat "Search my conversation history for quiz mode."
-```
+## Desktop widgets and security
 
-Live voice sessions save local Markdown logs under `conversation_logs/`.
-That folder is gitignored. When `OBSIDIAN_VAULT_PATH` is configured, live
-voice sessions are also copied into the vault under
-`NOVA/Conversations/YYYY/MM/`.
+Desktop Mode is a transparent, bottom-of-z-order widget layer over the real
+Windows wallpaper. It hides the dashboard wallpaper, outer frame, top bar,
+page arrows/dots, large dock, application windows, and other full-dashboard
+chrome. Locked Desktop Mode is click-through; Edit Mode temporarily restores
+mouse input so cards can be moved, resized, pinned, or hidden. Desktop widget
+positions are saved separately from the five Dashboard page layouts.
 
-Memory write examples:
+Tray actions and keyboard shortcuts:
 
-```powershell
-& ".\venv\Scripts\python.exe" ".agents\skills\run-ai-agent\driver.py" chat "Remember this: for NOVA, prefer small safe tools with driver checks."
-& ".\venv\Scripts\python.exe" ".agents\skills\run-ai-agent\driver.py" chat "Search my memory for driver checks."
-& ".\venv\Scripts\python.exe" ".agents\skills\run-ai-agent\driver.py" chat "Search my memory for NOVA project improvements."
-```
+- **Ctrl+Shift+D** — toggle Dashboard/Desktop Mode.
+- **Ctrl+Shift+E** — toggle Desktop Edit Mode.
+- **Ctrl+Shift+T** — toggle click-through while Desktop Mode is locked.
 
-File and desktop-control examples:
+The Apps & Files backend never accepts executable paths, PowerShell, command
+lines, or shell instructions from the web UI. The UI sends only an opaque
+registered application ID; Python resolves the trusted Win32 shortcut, UWP
+AUMID, or executable internally. Recent-file shortcuts are resolved before
+being shown, and both the scanner and final open action block `.env`,
+credential/secret/token/password files, SSH/GPG/cloud credential directories,
+private keys, certificates, and password databases. Sensitive paths and values
+are never sent to the browser or written to activity logs.
 
-```powershell
-& ".\venv\Scripts\python.exe" ".agents\skills\run-ai-agent\driver.py" chat "Find my file called schedule and open it."
-& ".\venv\Scripts\python.exe" ".agents\skills\run-ai-agent\driver.py" chat "Create a Desktop file called project ideas with three bullets."
-& ".\venv\Scripts\python.exe" ".agents\skills\run-ai-agent\driver.py" chat "Snap Chrome to the left and VS Code to the right."
-& ".\venv\Scripts\python.exe" ".agents\skills\run-ai-agent\driver.py" chat "Open a new desktop."
-```
+## Local agent bridge
 
-Interactive voice console. This uses the real microphone and speakers:
+The dashboard server and LiveKit agent remain separate processes. Small,
+validated commands cross `Dashboard/runtime/bridge/` as private atomic JSON
+envelopes. The active agent claims each command once, executes approvals in the
+same process that owns the pending executor, and returns a bounded result to the
+dashboard. Commands expire after two minutes. The bridge transports no API
+keys, environment values, arbitrary code, or private file contents.
 
-```powershell
-& ".\venv\Scripts\python.exe" agent.py console
-```
+`GET /health` reports `agentBridge: active` when a LiveKit console/dev session
+is connected and `agentBridge: waiting` otherwise. Start the agent and
+dashboard together to use Approve/Deny and Ctrl+K delegation.
 
-LiveKit Cloud worker registration:
+## Known limitation
 
-```powershell
-& ".\venv\Scripts\python.exe" agent.py dev
-```
-
-Local Ollama-only text mode:
-
-```powershell
-& ".\venv\Scripts\python.exe" offline_agent.py
-```
-
-Desktop dashboard work is parked locally until the final design is chosen.
+- **Calendar page** is still design demo data (no Google Calendar/ICS wired).
+- Widget layout and settings persist in the WebView2 localStorage.
+- The installed app finds the Python backend via `NOVA_PROJECT_ROOT` (env),
+  then the exe's parent chain, then the project's known path. The backend is
+  launched from the venv (not embedded), so it expects this project present.
 
 ## Verification
 
-After changes to `agent.py`, `prompts.py`, or `tools/`, run:
+From the project root:
 
 ```powershell
-& ".\venv\Scripts\python.exe" ".agents\skills\run-ai-agent\driver.py" tools
-& ".\venv\Scripts\python.exe" ".agents\skills\run-ai-agent\driver.py" chat "What can you help me with?"
+npm --prefix Dashboard run lint
+npm --prefix Dashboard run build
+npm --prefix Dashboard test
+& ".\venv\Scripts\python.exe" -m py_compile agent.py nova_bridge.py nova_agent_bridge.py Dashboard\server.py Dashboard\feeds.py Dashboard\actions.py
+& ".\venv\Scripts\python.exe" -m unittest discover -s Dashboard\tests -p "test_*.py" -v
 ```
 
-For launch checks:
-
-```powershell
-& ".\venv\Scripts\python.exe" ".agents\skills\run-ai-agent\driver.py" console-check
-& ".\venv\Scripts\python.exe" ".agents\skills\run-ai-agent\driver.py" dev-check
-```
-
-`console-check` may briefly play audio through the speakers. Do not run this
-near another voice assistant listener.
-
-## Safety Notes
-
-- `.env`, `.env.local`, `.spotify_cache`, logs, screenshots, and notes are
-  private runtime files and should not be committed.
-- File tools are sandboxed and block `.env*`.
-- Desktop app control is restricted to approved app names.
-- GPT-5.6 screen analysis requires explicit screen-share confirmation.
-- Destructive actions should require explicit user confirmation.
-- Do not submit copyrighted characters, music, logos, private files, or other
-  third-party assets unless permission is documented.
-
-## Hackathon Documentation
-
-- [HACKATHON_LOG.md](HACKATHON_LOG.md) records what existed before Build Week
-  and what Codex adds during the submission period.
-- [HACKATHON_SUBMISSION.md](HACKATHON_SUBMISSION.md) tracks the Devpost form,
-  demo video plan, repo readiness, and final submission checklist.
-- [THIRD_PARTY_SERVICES.md](THIRD_PARTY_SERVICES.md) tracks the services,
-  APIs, model providers, and license/terms checks used by NOVA.
+The browser matrix is checked at 1920×1080, 1600×900, 1366×768, and
+1280×720. Build the native Windows installer from `Dashboard/nova-app` with
+`npm install` followed by `npm run build`.
