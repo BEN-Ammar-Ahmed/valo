@@ -1,5 +1,7 @@
 # NOVA Dashboard
 
+![Tests](https://github.com/BEN-Ammar-Ahmed/dashboard/actions/workflows/test.yml/badge.svg)
+
 A high-fidelity, five-page desktop-shell dashboard UI, extracted from
 [NOVA](https://github.com/BEN-Ammar-Ahmed/Nova), Ahmed's personal AI
 assistant. This is the dashboard component on its own: a Python/aiohttp
@@ -15,6 +17,17 @@ security model, and edit-mode controls: see `DESIGN_HANDOFF.md` and
 
 No NOVA agent, no personal accounts, no setup required — this shows the
 dashboard with clearly-labeled sample data.
+
+```powershell
+.\run_demo.ps1
+```
+
+```bash
+./run_demo.sh
+```
+
+Either script creates a venv if needed, installs `requirements.txt`, and
+launches the server with `NOVA_DASHBOARD_DEMO=1`. Or do it by hand:
 
 ```powershell
 python -m venv venv
